@@ -2,7 +2,6 @@ package conductor
 
 import (
 	"syscall"
-	"time"
 
 	"github.com/GeorgeMac/tools/conduit"
 	"github.com/GeorgeMac/tools/wrappers"
@@ -17,13 +16,14 @@ func init() {
 
 type Scheduler struct {
 	t                Task
-	timeout, between time.Duration
+	timeout, between func() <-chan struct{}
 	term             func()
 }
 
 func New(t Task, opts ...option) *Scheduler {
 	s := &Scheduler{
-		t: t,
+		t:       t,
+		between: func() <-chan struct{} { return closed },
 	}
 
 	// apply any other options
@@ -41,8 +41,6 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 	}
 
 	for {
-		// timeout for task
-		timeout := wrappers.NewStructTicker(s.timeout)
 		// channel to signal that Task t is complete
 		done := make(chan struct{}, 0)
 		// begin task
@@ -53,10 +51,8 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 		// conduit for either the task or timeout
 		e := conduit.New()
 		// block until t conduit recvs
-		_, ok := <-t.Trigger(e.Either(done, timeout.C), term)
+		_, ok := <-t.Trigger(e.Either(done, s.timeout()), term)
 		if !ok {
-			// if term recvs, t is closed so terminate the scheduler
-			timeout.Stop()
 			// wait until e finishes, then send on notify
 			s.terminate(notify, e)
 			return
@@ -66,13 +62,9 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 
 		// conduit for case where term recvs
 		t = conduit.New()
-		// ticker for wait between tasks duration
-		between := wrappers.NewStructTicker(s.between)
 		// block until either between sends to t, or term closes it.
-		_, ok = <-t.Trigger(between.C, term)
+		_, ok = <-t.Trigger(s.between(), term)
 		if !ok {
-			// term sent, so we should exit gracefully
-			between.Stop()
 			// send on notify immediately
 			s.terminate(notify)
 			return
