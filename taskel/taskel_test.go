@@ -34,3 +34,17 @@ func Test_Scheduler_New(t *testing.T) {
 		t.Fatalf(errmsg, "to not block", "blocked")
 	}
 }
+
+func Test_Scheduler_New_WithOptions(t *testing.T) {
+	ch := make(chan struct{}, 1)
+	s := New(TaskFunc(func() {}), SetTimeoutChannel(ch))
+
+	ch <- struct{}{}
+
+	select {
+	case <-s.timeout():
+		return
+	default:
+		t.Fatalf(errmsg, "to not block", "blocked")
+	}
+}
