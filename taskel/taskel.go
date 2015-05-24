@@ -1,11 +1,6 @@
-package conductor
+package taskel
 
-import (
-	"syscall"
-
-	"github.com/GeorgeMac/tools/conduit"
-	"github.com/GeorgeMac/tools/wrappers"
-)
+import "github.com/GeorgeMac/tools/conduit"
 
 var closed chan struct{}
 
@@ -14,16 +9,22 @@ func init() {
 	close(closed)
 }
 
+type Trigger <-chan struct{}
+
 type Scheduler struct {
 	t                Task
-	timeout, between func() <-chan struct{}
-	term             func()
+	timeout, between func() Trigger
+	term             Trigger
 }
 
+// New returns a new instance of the Scheduler, with any
+// options applied.
+// Just calling taskel.New(t) will return a Scheduler, which on a call
+// to Begin will start an infinite for loop which calls t.Run(...).
 func New(t Task, opts ...option) *Scheduler {
 	s := &Scheduler{
 		t:       t,
-		between: func() <-chan struct{} { return closed },
+		between: func() Trigger { return closed },
 	}
 
 	// apply any other options
@@ -34,15 +35,11 @@ func New(t Task, opts ...option) *Scheduler {
 	return s
 }
 
+// Begin
 func (s Scheduler) Begin(notify chan<- struct{}) {
-	term := make(chan struct{}, 1)
-	if s.term != nil {
-		wrappers.Notify(term, syscall.SIGTERM)
-	}
-
 	for {
 		// channel to signal that Task t is complete
-		done := make(chan struct{}, 0)
+		done := make(chan struct{})
 		// begin task
 		go s.t.Run(done)
 
@@ -51,10 +48,10 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 		// conduit for either the task or timeout
 		e := conduit.New()
 		// block until t conduit recvs
-		_, ok := <-t.Trigger(e.Either(done, s.timeout()), term)
+		_, ok := <-t.Trigger(e.Either(done, s.timeout()), s.term)
 		if !ok {
 			// wait until e finishes, then send on notify
-			s.terminate(notify, e)
+			terminate(notify, e)
 			return
 		}
 
@@ -63,20 +60,18 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 		// conduit for case where term recvs
 		t = conduit.New()
 		// block until either between sends to t, or term closes it.
-		_, ok = <-t.Trigger(s.between(), term)
+		_, ok = <-t.Trigger(s.between(), s.term)
 		if !ok {
 			// send on notify immediately
-			s.terminate(notify)
+			terminate(notify)
 			return
 		}
 	}
 }
 
 // terminate is a useful function for common shutdown procedure
-func (s *Scheduler) terminate(notify chan<- struct{}, after ...<-chan struct{}) {
-	if s.term != nil {
-		s.term()
-	}
+func terminate(notify chan<- struct{}, after ...<-chan struct{}) {
+	// block on all channels in after
 	for _, a := range after {
 		<-a
 	}
@@ -93,6 +88,8 @@ type Task interface {
 // When the function completes it clsoes the notify channel.
 type TaskFunc func()
 
+// Run calls the underlying TaskFunc. Once the call finishes
+// it closes the provided notify channel.
 func (t TaskFunc) Run(notify chan<- struct{}) {
 	t()
 	close(notify)
