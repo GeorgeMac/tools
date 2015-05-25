@@ -1,6 +1,7 @@
 package taskel
 
 import (
+	"log"
 	"syscall"
 	"time"
 
@@ -58,4 +59,11 @@ func SetTerminateOnSignal(s *Scheduler) {
 	ch := make(chan struct{})
 	wrappers.Notify(ch, syscall.SIGTERM)
 	s.term = ch
+}
+
+// SetLogger enables logging by the taskel scheduler
+func SetLogger(logger *log.Logger) option {
+	return func(s *Scheduler) {
+		s.logger = logger
+	}
 }

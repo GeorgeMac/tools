@@ -1,6 +1,11 @@
 package taskel
 
-import "github.com/GeorgeMac/tools/conduit"
+import (
+	"log"
+	"time"
+
+	"github.com/GeorgeMac/tools/conduit"
+)
 
 var closed chan struct{}
 
@@ -15,6 +20,7 @@ type Scheduler struct {
 	t                Task
 	timeout, between func() Trigger
 	term             Trigger
+	logger           *log.Logger
 }
 
 // New returns a new instance of the Scheduler, with options
@@ -39,11 +45,14 @@ func New(t Task, opts ...option) *Scheduler {
 // Begin
 func (s Scheduler) Begin(notify chan<- struct{}) {
 	for {
+		s.logf("Performing task %T\n", s.t)
 		// channel to signal that Task t is complete
 		done := make(chan struct{})
 		// begin task
 		go s.t.Run(done)
 
+		// log time before task
+		before := time.Now()
 		// conduit for case where term recvs
 		t := conduit.New()
 		// conduit for either the task or timeout
@@ -52,11 +61,12 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 		_, ok := <-t.Trigger(e.Either(done, s.timeout()), s.term)
 		if !ok {
 			// wait until e finishes, then send on notify
-			terminate(notify, e)
+			s.terminate(notify, e)
 			return
 		}
 
 		// otherwise either we're done or we timed out.
+		s.logf("Waiting for task finished after %v\n", time.Now().Sub(before))
 
 		// conduit for case where term recvs
 		t = conduit.New()
@@ -64,14 +74,33 @@ func (s Scheduler) Begin(notify chan<- struct{}) {
 		_, ok = <-t.Trigger(s.between(), s.term)
 		if !ok {
 			// send on notify immediately
-			terminate(notify)
+			s.terminate(notify)
 			return
 		}
 	}
 }
 
+func (s *Scheduler) log(v ...interface{}) {
+	if s.logger != nil {
+		s.logger.Print(v...)
+	}
+}
+
+func (s *Scheduler) logln(v ...interface{}) {
+	if s.logger != nil {
+		s.logger.Println(v...)
+	}
+}
+
+func (s *Scheduler) logf(f string, v ...interface{}) {
+	if s.logger != nil {
+		s.logger.Printf(f, v...)
+	}
+}
+
 // terminate is a useful function for common shutdown procedure
-func terminate(notify chan<- struct{}, after ...<-chan struct{}) {
+func (s *Scheduler) terminate(notify chan<- struct{}, after ...<-chan struct{}) {
+	s.logln("Terminating taskel")
 	// block on all channels in after
 	for _, a := range after {
 		<-a
