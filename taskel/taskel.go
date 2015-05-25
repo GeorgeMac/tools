@@ -17,13 +17,14 @@ type Scheduler struct {
 	term             Trigger
 }
 
-// New returns a new instance of the Scheduler, with any
-// options applied.
+// New returns a new instance of the Scheduler, with options
+// applied.
 // Just calling taskel.New(t) will return a Scheduler, which on a call
 // to Begin will start an infinite for loop which calls t.Run(...).
 func New(t Task, opts ...option) *Scheduler {
 	s := &Scheduler{
 		t:       t,
+		timeout: func() Trigger { return nil },
 		between: func() Trigger { return closed },
 	}
 
@@ -83,14 +84,23 @@ type Task interface {
 	Run(chan<- struct{})
 }
 
-// TaskFunc implements Task
+// TaskFunc implements Task.
 // On a call to Run it calls the underlying function.
-// When the function completes it clsoes the notify channel.
-type TaskFunc func()
+type TaskFunc func(chan<- struct{})
 
-// Run calls the underlying TaskFunc. Once the call finishes
-// it closes the provided notify channel.
+// Run calls the underlying TaskFunc with the provided notify channel.
 func (t TaskFunc) Run(notify chan<- struct{}) {
+	t(notify)
+}
+
+// AfterTaskFunc implements Task.
+// On a call to Run it calls the underlying function.
+// When the function completes it closes the notify channel.
+type AfterTaskFunc func()
+
+// Run calls the underlying func. Once the call finishes
+// it closes the provided notify channel.
+func (t AfterTaskFunc) Run(notify chan<- struct{}) {
 	t()
 	close(notify)
 }

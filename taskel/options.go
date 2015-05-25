@@ -16,12 +16,12 @@ func SetTimeout(dur time.Duration) option {
 	}
 }
 
-// SetTimeoutChannel allows you to pass a signalling
+// SetTimeoutOn allows you to pass a signalling
 // channel of your own.
-func SetTimeoutChannel(c Trigger) option {
+func SetTimeoutOn(t Trigger) option {
 	return func(s *Scheduler) {
 		s.timeout = func() Trigger {
-			return c
+			return t
 		}
 	}
 }
@@ -31,6 +31,16 @@ func SetTimeoutChannel(c Trigger) option {
 func SetTimeBetween(dur time.Duration) option {
 	return func(s *Scheduler) {
 		s.between = func() Trigger { return wrappers.StructTick(dur) }
+	}
+}
+
+// SetTimeBetweenOn allows you to pass a signalling
+// channel of your own.
+func SetTimeBetweenOn(t Trigger) option {
+	return func(s *Scheduler) {
+		s.between = func() Trigger {
+			return t
+		}
 	}
 }
 
@@ -44,10 +54,8 @@ func SetTerminateOn(t Trigger) option {
 
 // SetTerminateOnSignal will trigger termination on the capture
 // of a syscall.SIGTERM.
-func SetTerminatOnSignal() option {
-	return func(s *Scheduler) {
-		ch := make(chan struct{})
-		wrappers.Notify(ch, syscall.SIGTERM)
-		s.term = ch
-	}
+func SetTerminateOnSignal(s *Scheduler) {
+	ch := make(chan struct{})
+	wrappers.Notify(ch, syscall.SIGTERM)
+	s.term = ch
 }

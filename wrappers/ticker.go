@@ -8,9 +8,10 @@ type StructTicker struct {
 }
 
 func NewStructTicker(dur time.Duration) StructTicker {
-	c := make(chan struct{})
+	t := time.NewTicker(dur)
+	c := make(chan struct{}, cap(t.C))
 	s := StructTicker{
-		t: time.NewTicker(dur),
+		t: t,
 		C: c,
 	}
 	go func() {

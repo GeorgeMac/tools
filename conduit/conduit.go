@@ -14,9 +14,17 @@ func New() Conduit {
 func (c Conduit) Either(this, that <-chan struct{}) Conduit {
 	go func() {
 		select {
-		case t := <-this:
+		case t, ok := <-this:
+			if !ok {
+				close(c)
+				return
+			}
 			c <- t
-		case t := <-that:
+		case t, ok := <-that:
+			if !ok {
+				close(c)
+				return
+			}
 			c <- t
 		}
 	}()
@@ -31,10 +39,8 @@ func (c Conduit) Trigger(pipe, trigger <-chan struct{}) Conduit {
 		select {
 		case <-trigger:
 			close(c)
-		case p, ok := <-pipe:
-			if ok {
-				c <- p
-			}
+		case p := <-pipe:
+			c <- p
 		}
 	}()
 	return c
